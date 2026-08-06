@@ -13,37 +13,69 @@ local Storage = Instance.new("Folder")
 Storage.Parent = CoreGui
 Storage.Name = "Highlight_Storage"
 
-local function Highlight(plr)
-    local Highlight = Instance.new("Highlight")
-    Highlight.Name = plr.Name
-    Highlight.FillColor = FillColor
-    Highlight.DepthMode = DepthMode
-    Highlight.FillTransparency = FillTransparency
-    Highlight.OutlineColor = OutlineColor
-    Highlight.OutlineTransparency = 0
-    Highlight.Parent = Storage
-
-    local plrchar = plr.Character
-    if plrchar then
-        Highlight.Adornee = plrchar
+local function SetupPlayer(plr)
+    if plr == lp then return end -- Opcional: não destaca o próprio jogador
+    
+    if Storage:FindFirstChild(plr.Name) then
+        return
     end
-
-    connections[plr] = plr.CharacterAdded:Connect(function(char)
-        Highlight.Adornee = char
+    
+    local highlight = Instance.new("Highlight")
+    highlight.Name = plr.Name
+    highlight.FillColor = FillColor
+    highlight.DepthMode = DepthMode
+    highlight.FillTransparency = FillTransparency
+    highlight.OutlineColor = OutlineColor
+    highlight.OutlineTransparency = 0
+    highlight.Parent = Storage
+    
+    -- Tenta aplicar imediatamente
+    local char = plr.Character
+    if char and char.Parent then
+        highlight.Adornee = char
+    end
+    
+    -- Conecta aos eventos do personagem
+    local connection = plr.CharacterAdded:Connect(function(char)
+        highlight.Adornee = char
     end)
+    
+    connections[plr] = {
+        conn = connection,
+        highlight = highlight
+    }
 end
 
-Players.PlayerAdded:Connect(Highlight)
-for i,v in next, Players:GetPlayers() do
-    Highlight(v)
+-- Processa jogadores existentes
+for _, plr in ipairs(Players:GetPlayers()) do
+    SetupPlayer(plr)
 end
+
+-- Eventos
+Players.PlayerAdded:Connect(SetupPlayer)
 
 Players.PlayerRemoving:Connect(function(plr)
-    local plrname = plr.Name
-    if Storage[plrname] then
-        Storage[plrname]:Destroy()
-    end
     if connections[plr] then
-        connections[plr]:Disconnect()
+        connections[plr].conn:Disconnect()
+        if connections[plr].highlight then
+            connections[plr].highlight:Destroy()
+        end
+        connections[plr] = nil
+    end
+end)
+
+-- Caso o personagem seja adicionado antes da conexão ser estabelecida
+-- Esta é uma verificação extra que pode ajudar
+game:GetService("RunService").Heartbeat:Connect(function()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp and connections[plr] then
+            local highlight = connections[plr].highlight
+            if highlight and not highlight.Adornee then
+                local char = plr.Character
+                if char and char.Parent then
+                    highlight.Adornee = char
+                end
+            end
+        end
     end
 end)
