@@ -4,78 +4,150 @@ local FillTransparency = 0.5
 local OutlineColor = Color3.fromRGB(255,255,255)
 local OutlineTransparency = 0
 
-local CoreGui = game:FindService("CoreGui")
-local Players = game:FindService("Players")
+local CoreGui = game:GetService("CoreGui")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local lp = Players.LocalPlayer
-local connections = {}
 
 local Storage = Instance.new("Folder")
 Storage.Parent = CoreGui
 Storage.Name = "Highlight_Storage"
 
-local function SetupPlayer(plr)
-    if plr == lp then return end -- Opcional: não destaca o próprio jogador
-    
+local processedPlayers = {}
+local highlightData = {}
+
+-- Função para criar highlight
+local function CreateHighlight(plr)
     if Storage:FindFirstChild(plr.Name) then
-        return
+        return Storage[plr.Name]
     end
     
-    local highlight = Instance.new("Highlight")
-    highlight.Name = plr.Name
-    highlight.FillColor = FillColor
-    highlight.DepthMode = DepthMode
-    highlight.FillTransparency = FillTransparency
-    highlight.OutlineColor = OutlineColor
-    highlight.OutlineTransparency = 0
-    highlight.Parent = Storage
+    local Highlight = Instance.new("Highlight")
+    Highlight.Name = plr.Name
+    Highlight.FillColor = FillColor
+    Highlight.DepthMode = DepthMode
+    Highlight.FillTransparency = FillTransparency
+    Highlight.OutlineColor = OutlineColor
+    Highlight.OutlineTransparency = 0
+    Highlight.Parent = Storage
     
-    -- Tenta aplicar imediatamente
+    return Highlight
+end
+
+-- Função para atualizar highlight de um player
+local function UpdatePlayerHighlight(plr)
+    if not plr or plr == lp then return end -- Opcional: não destaca o próprio jogador
+    
+    -- Verifica se o player ainda existe
+    if not plr.Parent then return end
+    
+    -- Cria ou pega o highlight
+    local highlight = CreateHighlight(plr)
+    
+    -- Atualiza o adornee
     local char = plr.Character
-    if char and char.Parent then
+    if char and char.Parent and char:FindFirstChild("Humanoid") then
         highlight.Adornee = char
+        processedPlayers[plr] = true
+        return true
+    else
+        highlight.Adornee = nil
+        return false
     end
+end
+
+-- Configura os eventos do player
+local function SetupPlayerEvents(plr)
+    if highlightData[plr] then return end
     
-    -- Conecta aos eventos do personagem
-    local connection = plr.CharacterAdded:Connect(function(char)
-        highlight.Adornee = char
+    local data = {}
+    
+    -- Evento quando o personagem é adicionado
+    data.characterAdded = plr.CharacterAdded:Connect(function(char)
+        -- Aguarda o Humanoid carregar
+        if char:WaitForChild("Humanoid", 5) then
+            UpdatePlayerHighlight(plr)
+        end
     end)
     
-    connections[plr] = {
-        conn = connection,
-        highlight = highlight
-    }
-end
-
--- Processa jogadores existentes
-for _, plr in ipairs(Players:GetPlayers()) do
-    SetupPlayer(plr)
-end
-
--- Eventos
-Players.PlayerAdded:Connect(SetupPlayer)
-
-Players.PlayerRemoving:Connect(function(plr)
-    if connections[plr] then
-        connections[plr].conn:Disconnect()
-        if connections[plr].highlight then
-            connections[plr].highlight:Destroy()
+    -- Evento quando o personagem é removido
+    data.characterRemoving = plr.CharacterRemoving:Connect(function()
+        if Storage:FindFirstChild(plr.Name) then
+            Storage[plr.Name].Adornee = nil
         end
-        connections[plr] = nil
-    end
-end)
+        processedPlayers[plr] = false
+    end)
+    
+    highlightData[plr] = data
+end
 
--- Caso o personagem seja adicionado antes da conexão ser estabelecida
--- Esta é uma verificação extra que pode ajudar
-game:GetService("RunService").Heartbeat:Connect(function()
+-- Loop principal para verificar todos os players constantemente
+local function CheckAllPlayers()
     for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= lp and connections[plr] then
-            local highlight = connections[plr].highlight
-            if highlight and not highlight.Adornee then
-                local char = plr.Character
-                if char and char.Parent then
-                    highlight.Adornee = char
+        if plr ~= lp then
+            -- Se o player não foi processado ainda ou o highlight não está ativo
+            if not processedPlayers[plr] then
+                local success = UpdatePlayerHighlight(plr)
+                if success then
+                    -- Se conseguiu aplicar, configura os eventos
+                    SetupPlayerEvents(plr)
                 end
             end
         end
     end
+end
+
+-- Processa players existentes imediatamente
+print("Iniciando processamento de players...")
+for _, plr in ipairs(Players:GetPlayers()) do
+    if plr ~= lp then
+        -- Tenta aplicar imediatamente
+        local success = UpdatePlayerHighlight(plr)
+        if success then
+            SetupPlayerEvents(plr)
+        end
+    end
+end
+
+-- Evento para novos players
+Players.PlayerAdded:Connect(function(plr)
+    if plr ~= lp then
+        -- Aguarda um pouco para o personagem carregar
+        task.wait(0.5)
+        UpdatePlayerHighlight(plr)
+        SetupPlayerEvents(plr)
+    end
 end)
+
+-- Evento para quando player sai
+Players.PlayerRemoving:Connect(function(plr)
+    if Storage:FindFirstChild(plr.Name) then
+        Storage[plr.Name]:Destroy()
+    end
+    if highlightData[plr] then
+        if highlightData[plr].characterAdded then
+            highlightData[plr].characterAdded:Disconnect()
+        end
+        if highlightData[plr].characterRemoving then
+            highlightData[plr].characterRemoving:Disconnect()
+        end
+        highlightData[plr] = nil
+    end
+    processedPlayers[plr] = nil
+end)
+
+-- Loop contínuo para garantir que todos os players tenham highlight
+-- Este loop verifica a cada 0.5 segundos
+RunService.Heartbeat:Connect(function()
+    CheckAllPlayers()
+end)
+
+-- Verificação extra após 1, 2 e 3 segundos
+task.wait(1)
+CheckAllPlayers()
+task.wait(1)
+CheckAllPlayers()
+task.wait(1)
+CheckAllPlayers()
+
+print("Sistema de highlights iniciado com sucesso!")
