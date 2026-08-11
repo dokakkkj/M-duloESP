@@ -1,12 +1,39 @@
-local FillColor = Color3.fromRGB(175,25,255)
+-- Configuração do sistema
+-- Cores pré-definidas para equipes (serão atribuídas automaticamente)
+local AvailableColors = {
+    Color3.fromRGB(255, 0, 0),     -- Vermelho
+    Color3.fromRGB(0, 0, 255),     -- Azul
+    Color3.fromRGB(0, 255, 0),     -- Verde
+    Color3.fromRGB(255, 255, 0),   -- Amarelo
+    Color3.fromRGB(255, 0, 255),   -- Magenta
+    Color3.fromRGB(0, 255, 255),   -- Ciano
+    Color3.fromRGB(255, 165, 0),   -- Laranja
+    Color3.fromRGB(128, 0, 128),   -- Roxo
+    Color3.fromRGB(0, 128, 128),   -- Verde-água
+    Color3.fromRGB(128, 128, 0),   -- Verde-oliva
+    Color3.fromRGB(255, 192, 203), -- Rosa
+    Color3.fromRGB(165, 42, 42),   -- Marrom
+    Color3.fromRGB(70, 130, 180),  -- Aço
+    Color3.fromRGB(255, 140, 0),   -- Laranja escuro
+    Color3.fromRGB(0, 100, 0),     -- Verde escuro
+    Color3.fromRGB(75, 0, 130),    -- Índigo
+    Color3.fromRGB(255, 20, 147),  -- Rosa profundo
+    Color3.fromRGB(0, 191, 255),   -- Azul céu
+    Color3.fromRGB(255, 215, 0),   -- Dourado
+    Color3.fromRGB(128, 0, 0),     -- Vinho
+}
+
+-- Cor padrão para quando o Team-Check está OFF
+local OFF_COLOR = Color3.fromRGB(175, 25, 255)
 local DepthMode = "AlwaysOnTop"
 local FillTransparency = 0.5
-local OutlineColor = Color3.fromRGB(255,255,255)
+local OutlineColor = Color3.fromRGB(255, 255, 255)
 local OutlineTransparency = 0
 
 local CoreGui = game:GetService("CoreGui")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local Teams = game:GetService("Teams")
 local lp = Players.LocalPlayer
 
 local Storage = Instance.new("Folder")
@@ -15,6 +42,45 @@ Storage.Name = "Highlight_Storage"
 
 local processedPlayers = {}
 local highlightData = {}
+local teamCheckEnabled = true
+local teamColorMap = {} -- Armazena a cor atribuída para cada equipe
+local colorIndex = 1 -- Índice para atribuir cores automaticamente
+
+-- Função para atribuir cor automaticamente a uma equipe
+local function AssignTeamColor(teamName)
+    if teamColorMap[teamName] then
+        return teamColorMap[teamName]
+    end
+    
+    -- Pega a próxima cor disponível
+    local color = AvailableColors[colorIndex]
+    if not color then
+        -- Se acabaram as cores, reinicia o ciclo
+        colorIndex = 1
+        color = AvailableColors[colorIndex]
+    end
+    
+    teamColorMap[teamName] = color
+    colorIndex = colorIndex + 1
+    
+    print(string.format("Equipe '%s' recebeu a cor: %s", teamName, tostring(color)))
+    return color
+end
+
+-- Função para obter a cor da equipe do jogador
+local function GetTeamColor(plr)
+    if not teamCheckEnabled then
+        return OFF_COLOR
+    end
+    
+    -- Se o jogador não tem equipe, usa OFF_COLOR
+    if not plr.Team then
+        return OFF_COLOR
+    end
+    
+    local teamName = plr.Team.Name
+    return AssignTeamColor(teamName)
+end
 
 -- Função para criar highlight
 local function CreateHighlight(plr)
@@ -24,11 +90,11 @@ local function CreateHighlight(plr)
     
     local Highlight = Instance.new("Highlight")
     Highlight.Name = plr.Name
-    Highlight.FillColor = FillColor
+    Highlight.FillColor = GetTeamColor(plr)
     Highlight.DepthMode = DepthMode
     Highlight.FillTransparency = FillTransparency
     Highlight.OutlineColor = OutlineColor
-    Highlight.OutlineTransparency = 0
+    Highlight.OutlineTransparency = OutlineTransparency
     Highlight.Parent = Storage
     
     return Highlight
@@ -36,18 +102,16 @@ end
 
 -- Função para atualizar highlight de um player
 local function UpdatePlayerHighlight(plr)
-    if not plr or plr == lp then return end -- Opcional: não destaca o próprio jogador
+    if not plr or plr == lp then return end
     
-    -- Verifica se o player ainda existe
     if not plr.Parent then return end
     
-    -- Cria ou pega o highlight
     local highlight = CreateHighlight(plr)
     
-    -- Atualiza o adornee
     local char = plr.Character
     if char and char.Parent and char:FindFirstChild("Humanoid") then
         highlight.Adornee = char
+        highlight.FillColor = GetTeamColor(plr)
         processedPlayers[plr] = true
         return true
     else
@@ -56,26 +120,105 @@ local function UpdatePlayerHighlight(plr)
     end
 end
 
+-- Função para atualizar a cor de todos os highlights
+local function UpdateAllHighlights()
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp then
+            local highlight = Storage:FindFirstChild(plr.Name)
+            if highlight then
+                highlight.FillColor = GetTeamColor(plr)
+            end
+        end
+    end
+end
+
+-- Função para detectar todas as equipes existentes
+local function DetectAllTeams()
+    print("=== DETECTANDO TODAS AS EQUIPES ===")
+    local teamsFound = {}
+    
+    -- Primeiro, verifica todas as equipes no serviço Teams
+    for _, team in ipairs(Teams:GetTeams()) do
+        local teamName = team.Name
+        teamsFound[teamName] = true
+        print(string.format("Equipe encontrada no Teams: %s", teamName))
+    end
+    
+    -- Depois, verifica equipes dos jogadores
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr.Team then
+            local teamName = plr.Team.Name
+            if not teamsFound[teamName] then
+                teamsFound[teamName] = true
+                print(string.format("Equipe encontrada via jogador: %s", teamName))
+            end
+        end
+    end
+    
+    -- Atribui cores para todas as equipes encontradas
+    for teamName in pairs(teamsFound) do
+        AssignTeamColor(teamName)
+    end
+    
+    print("=== FIM DA DETECÇÃO ===")
+    print("Total de equipes encontradas:", #teamsFound)
+end
+
+-- Função para mostrar todas as equipes e cores no console
+local function DebugTeams()
+    print("=== EQUIPES E CORES ATUAIS ===")
+    for teamName, color in pairs(teamColorMap) do
+        print(string.format("Equipe: %s -> Cor: %s", teamName, tostring(color)))
+    end
+    print("================================")
+    
+    print("=== JOGADORES E SUAS EQUIPES ===")
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= lp then
+            local teamName = plr.Team and plr.Team.Name or "Sem equipe"
+            local color = GetTeamColor(plr)
+            print(string.format("Jogador: %s -> Equipe: %s -> Cor: %s", plr.Name, teamName, tostring(color)))
+        end
+    end
+    print("================================")
+end
+
+-- Função para forçar a reatribuição de cores para todas as equipes
+local function ReassignAllColors()
+    print("Reatribuindo cores para todas as equipes...")
+    teamColorMap = {}
+    colorIndex = 1
+    DetectAllTeams()
+    UpdateAllHighlights()
+    print("Cores reatribuídas!")
+end
+
 -- Configura os eventos do player
 local function SetupPlayerEvents(plr)
     if highlightData[plr] then return end
     
     local data = {}
     
-    -- Evento quando o personagem é adicionado
     data.characterAdded = plr.CharacterAdded:Connect(function(char)
-        -- Aguarda o Humanoid carregar
         if char:WaitForChild("Humanoid", 5) then
             UpdatePlayerHighlight(plr)
         end
     end)
     
-    -- Evento quando o personagem é removido
     data.characterRemoving = plr.CharacterRemoving:Connect(function()
         if Storage:FindFirstChild(plr.Name) then
             Storage[plr.Name].Adornee = nil
         end
         processedPlayers[plr] = false
+    end)
+    
+    -- Evento para quando o time do jogador mudar
+    data.teamChanged = plr:GetPropertyChangedSignal("Team"):Connect(function()
+        if plr.Team then
+            -- Detecta a nova equipe e atribui cor se necessário
+            AssignTeamColor(plr.Team.Name)
+        end
+        UpdatePlayerHighlight(plr)
     end)
     
     highlightData[plr] = data
@@ -85,11 +228,9 @@ end
 local function CheckAllPlayers()
     for _, plr in ipairs(Players:GetPlayers()) do
         if plr ~= lp then
-            -- Se o player não foi processado ainda ou o highlight não está ativo
             if not processedPlayers[plr] then
                 local success = UpdatePlayerHighlight(plr)
                 if success then
-                    -- Se conseguiu aplicar, configura os eventos
                     SetupPlayerEvents(plr)
                 end
             end
@@ -97,11 +238,29 @@ local function CheckAllPlayers()
     end
 end
 
--- Processa players existentes imediatamente
-print("Iniciando processamento de players...")
+-- Função para alternar o Team-Check ON/OFF
+local function ToggleTeamCheck(enable)
+    teamCheckEnabled = enable
+    UpdateAllHighlights()
+    print(enable and "Team-Check ligado (cores das equipes)" or "Team-Check desligado (cor padrão)")
+end
+
+-- Função para adicionar/alterar cor de uma equipe manualmente
+local function SetTeamColor(teamName, color)
+    teamColorMap[teamName] = color
+    UpdateAllHighlights()
+    print(string.format("Cor da equipe %s alterada para %s", teamName, tostring(color)))
+end
+
+-- Processamento inicial
+print("Iniciando sistema de Team-Check com detecção automática de equipes...")
+
+-- Detecta todas as equipes
+DetectAllTeams()
+
+-- Processa players existentes
 for _, plr in ipairs(Players:GetPlayers()) do
     if plr ~= lp then
-        -- Tenta aplicar imediatamente
         local success = UpdatePlayerHighlight(plr)
         if success then
             SetupPlayerEvents(plr)
@@ -109,10 +268,13 @@ for _, plr in ipairs(Players:GetPlayers()) do
     end
 end
 
+-- Mostra informações de debug
+task.wait(1)
+DebugTeams()
+
 -- Evento para novos players
 Players.PlayerAdded:Connect(function(plr)
     if plr ~= lp then
-        -- Aguarda um pouco para o personagem carregar
         task.wait(0.5)
         UpdatePlayerHighlight(plr)
         SetupPlayerEvents(plr)
@@ -131,18 +293,32 @@ Players.PlayerRemoving:Connect(function(plr)
         if highlightData[plr].characterRemoving then
             highlightData[plr].characterRemoving:Disconnect()
         end
+        if highlightData[plr].teamChanged then
+            highlightData[plr].teamChanged:Disconnect()
+        end
         highlightData[plr] = nil
     end
     processedPlayers[plr] = nil
 end)
 
--- Loop contínuo para garantir que todos os players tenham highlight
--- Este loop verifica a cada 0.5 segundos
+-- Evento para quando o time do jogador local mudar
+lp:GetPropertyChangedSignal("Team"):Connect(function()
+    UpdateAllHighlights()
+end)
+
+-- Evento para quando novas equipes forem adicionadas
+Teams.ChildAdded:Connect(function(team)
+    print(string.format("Nova equipe detectada: %s", team.Name))
+    AssignTeamColor(team.Name)
+    UpdateAllHighlights()
+end)
+
+-- Loop contínuo
 RunService.Heartbeat:Connect(function()
     CheckAllPlayers()
 end)
 
--- Verificação extra após 1, 2 e 3 segundos
+-- Verificação extra
 task.wait(1)
 CheckAllPlayers()
 task.wait(1)
@@ -150,4 +326,11 @@ CheckAllPlayers()
 task.wait(1)
 CheckAllPlayers()
 
-print("Sistema de highlights iniciado com sucesso!")
+print("Sistema de Team-Check iniciado com sucesso!")
+print(string.format("Cores disponíveis: %d cores", #AvailableColors))
+print("\nComandos disponíveis:")
+print("  ToggleTeamCheck(true/false) - Liga/Desliga o sistema")
+print("  SetTeamColor('NomeEquipe', Color3.fromRGB(r,g,b)) - Altera cor de uma equipe")
+print("  DebugTeams() - Mostra informações de debug")
+print("  ReassignAllColors() - Reatribui todas as cores automaticamente")
+print("  DetectAllTeams() - Detecta todas as equipes existentes")
